@@ -3389,7 +3389,9 @@ class PEDACmd(object):
 
         return
 
-    def _replace_flags(self, args):
+    def _replace_flags(self, cmd, args):
+        if cmd == 'flag':
+            return args
         flag_keys = [x for x in self._flags if not x.startswith('0x')]
         new_args = []
         for arg in args:
@@ -6009,9 +6011,7 @@ class pedaGDBCommand(gdb.Command):
                 try:
                     # reset memoized cache
                     reset_cache(sys.modules['__main__'])
-                    args = arg[1:]
-                    if cmd is not 'flag':
-                        args = pedacmd._replace_flags(args)
+                    args = pedacmd._replace_flags(cmd, arg[1:])
                     msg("args: " + ",".join(args))
                     func(*args)
                 except Exception as e:
