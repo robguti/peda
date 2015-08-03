@@ -777,7 +777,8 @@ class PEDA(object):
             arg += [to_hex(to_int(arg[0]) + 32)]
 
         self.execute("set disassembly-flavor intel")
-        out = self.execute_redirect("disassemble %s %s" % (modif, ",".join(arg)))
+        cmd = "disassemble %s %s" % (modif, ",".join(arg))
+        out = self.execute_redirect(cmd)
         if not out:
             return None
         else:
@@ -1614,21 +1615,37 @@ class PEDA(object):
 
     @memoized
     def get_disasm_until_ret(self, address):
-        ins_per_read = 32
+        inst_count = 2
         loop = True
         code = ''
         count = 0
-        while loop and count < 10:
-            raw_code = self.execute_redirect("x/%di 0x%x" % (ins_per_read, address))
-            ret_index = raw_code.index('ret')
-            if ret_index > 0:
-                code = raw_code[:ret_index+3] + '\n'
-                loop = False
-            else:
-                code += raw_code
-            count += 1
-        return code
 
+        if not isinstance(address, int):
+            error_msg("Address [%s] not valid" % address)
+            return None
+
+        while loop:
+            cmd = "x/%di 0x%x" % (inst_count, address)
+            raw_code = self.execute_redirect(cmd)
+
+            if not raw_code:
+                break
+
+            raw_lines = raw_code.splitlines()
+
+            # Extract next addr from the last line
+            addr_str = raw_lines[-1].strip().split(':')[0]
+            if ' ' in addr_str:
+                addr_str = addr_str.split(' ')[0]
+            address = int(addr_str, 16)
+
+            for line in raw_lines[:-1]:
+                code += line + '\n'
+                if 'ret' in line:
+                    loop = False
+                    break
+
+        return code
 
     @memoized
     def get_disasm(self, address, count=1):
