@@ -3015,7 +3015,7 @@ class PEDACmd(object):
     def __init__(self):
         # list of all available commands
         self.commands = [c for c in dir(self) if callable(getattr(self, c)) and not c.startswith("_")]
-
+        self._flags = {}
     ##################
     #   Misc Utils   #
     ##################
@@ -3371,6 +3371,57 @@ class PEDACmd(object):
             pager(text)
 
         return
+
+    def _replace_flags(self, args):
+        flag_keys = [x for x in self._flags if not x.startswith('0x')]
+        new_args = []
+        for arg in args:
+            for flag in flag_keys:
+                if flag == arg:
+                    index = args.index(arg)
+                    arg = self._flags[flag]
+                    msg("debug: found flag replacing")
+            new_args.append(arg)
+        msg("new_Args=" + ",".join(new_args))
+        return new_args
+
+    def flag(self, *args):
+        """
+        Manage memory flags.
+            flags           -> list current flags
+            flags main 0x12 -> add new flag
+            flags main -    -> delete flag
+            flags main      -> show flag reference
+        """
+        if len(args) == 0:
+            msg("Flags:")
+            for flag in self._flags:
+                addr = self._flags[flag]
+                if not flag.startswith('0x'):
+                    msg("  %s -> %s" % (addr, flag))
+        elif len(args) == 1:
+            flag = args[0]
+            if flag in self._flags:
+                addr = self._flags[flag]
+                msg("  %s -> %s" % (addr, flag))
+            else:
+                msg("Flag [%s] not found" % flag)
+
+        elif len(args) >= 2:
+            flag = args[0]
+            addr = args[1]
+            if addr == "-":
+                if flag in self._flags:
+                    addr = self._flags[flag]
+                    del self._flags[flag]
+                    del self._flags[addr]
+                    msg("Deleted flag [%s]" % flag)
+                else:
+                    msg("Flag [%s] not found" % flag)
+            else:
+                self._flags[addr] = flag
+                self._flags[flag] = addr
+                msg("Added flag [%s]" % flag)
 
     def aslr(self, *arg):
         """
@@ -5941,7 +5992,11 @@ class pedaGDBCommand(gdb.Command):
                 try:
                     # reset memoized cache
                     reset_cache(sys.modules['__main__'])
-                    func(*arg[1:])
+                    args = arg[1:]
+                    if 'cmd' is not 'flag':
+                        args = pedacmd._replace_flags(args)
+                    msg("args: " + ",".join(args))
+                    func(*args)
                 except Exception as e:
                     if config.Option.get("debug") == "on":
                         msg("Exception: %s" %e)
