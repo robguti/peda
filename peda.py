@@ -3415,7 +3415,7 @@ class PEDACmd(object):
             for flag in self._flags:
                 addr = self._flags[flag]
                 if not flag.startswith('0x'):
-                    msg("  %s -> %s" % (addr, flag))
+                    msg("  flag %s %s" % (flag, addr))
         elif len(args) == 1:
             flag = args[0]
             if flag in self._flags:
@@ -6010,7 +6010,7 @@ class pedaGDBCommand(gdb.Command):
                     # reset memoized cache
                     reset_cache(sys.modules['__main__'])
                     args = arg[1:]
-                    if 'cmd' is not 'flag':
+                    if cmd is not 'flag':
                         args = pedacmd._replace_flags(args)
                     msg("args: " + ",".join(args))
                     func(*args)
