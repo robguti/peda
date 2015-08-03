@@ -3401,7 +3401,6 @@ class PEDACmd(object):
                     arg = self._flags[flag]
                     msg("debug: found flag replacing")
             new_args.append(arg)
-        msg("new_Args=" + ",".join(new_args))
         return new_args
 
     def flag(self, *args):
@@ -3413,16 +3412,15 @@ class PEDACmd(object):
             flags main      -> show flag reference
         """
         if len(args) == 0:
-            msg("Flags:")
             for flag in self._flags:
                 addr = self._flags[flag]
                 if not flag.startswith('0x'):
-                    msg("  flag %s %s" % (flag, addr))
+                    msg("flag %s %s" % (flag, addr))
         elif len(args) == 1:
             flag = args[0]
             if flag in self._flags:
                 addr = self._flags[flag]
-                msg("  %s -> %s" % (addr, flag))
+                msg("flag %s %s" % (flag, addr))
             else:
                 msg("Flag [%s] not found" % flag)
 
@@ -3648,6 +3646,14 @@ class PEDACmd(object):
             code = peda.get_disasm_until_ret(address)
         else:
             code = peda.disassemble(*arg)
+
+        for flag_addr in self._flags:
+            if '0x' in flag_addr:
+                flag_str = self._flags[flag_addr]
+                patt = "%s" % flag_addr
+                msg(patt)
+                code = re.sub(patt, "<<%s>>" % (flag_str), code)
+
         msg(format_disasm_code(code))
 
         return
@@ -6012,7 +6018,6 @@ class pedaGDBCommand(gdb.Command):
                     # reset memoized cache
                     reset_cache(sys.modules['__main__'])
                     args = pedacmd._replace_flags(cmd, arg[1:])
-                    msg("args: " + ",".join(args))
                     func(*args)
                 except Exception as e:
                     if config.Option.get("debug") == "on":
