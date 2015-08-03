@@ -1613,6 +1613,24 @@ class PEDA(object):
         return vmrange is not None
 
     @memoized
+    def get_disasm_until_ret(self, address):
+        ins_per_read = 32
+        loop = True
+        code = ''
+        count = 0
+        while loop and count < 10:
+            raw_code = self.execute_redirect("x/%di 0x%x" % (ins_per_read, address))
+            ret_index = raw_code.index('ret')
+            if ret_index > 0:
+                code = raw_code[:ret_index+3] + '\n'
+                loop = False
+            else:
+                code += raw_code
+            count += 1
+        return code
+
+
+    @memoized
     def get_disasm(self, address, count=1):
         """
         Get the ASM code of instruction at address
@@ -3556,6 +3574,8 @@ class PEDACmd(object):
                 self._missing_argument()
             else:
                 code = peda.get_disasm(address, count)
+        elif fmt_count == 'ret':
+            code = peda.get_disasm_until_ret(address)
         else:
             code = peda.disassemble(*arg)
         msg(format_disasm_code(code))
