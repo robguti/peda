@@ -1613,6 +1613,36 @@ class PEDA(object):
         vmrange = self.get_vmrange(value, maps)
         return vmrange is not None
 
+
+    @memoized
+    def read_instructions(self, address, count=None, max=None):
+        max = max or 512  # max number of instructions to get
+        icount = count or 2
+        loop = True
+        last_line = ''
+
+        while loop and icount > 0:
+            cmd = "x/%di 0x%x" % (2, address) # read 2 instructions per iteration
+            # msg(cmd)
+            raw_code = self.execute_redirect(cmd)
+            if not raw_code:
+                # If there was an error, return the previous last line as list and exit
+                if last_line:
+                    yield [last_line]
+                break
+
+            raw_lines = raw_code.splitlines()
+
+            # Extract next addr from the last line
+            last_line = raw_lines[-1]
+            addr_str = raw_lines[-1].strip().split(':')[0]
+            if ' ' in addr_str:
+                addr_str = addr_str.split(' ')[0]
+            address = int(addr_str, 16)
+
+            icount += len(raw_lines[-1])
+            yield raw_lines[:-1]
+
     @memoized
     def get_disasm_until_ret(self, address):
         inst_count = 2
@@ -1624,29 +1654,37 @@ class PEDA(object):
             error_msg("Address [%s] not valid" % address)
             return None
 
-        while loop:
-            cmd = "x/%di 0x%x" % (inst_count, address)
-            raw_code = self.execute_redirect(cmd)
-            if not raw_code:
-                break
-
-            raw_lines = raw_code.splitlines()
-
-            # Extract next addr from the last line
-            addr_str = raw_lines[-1].strip().split(':')[0]
-            if ' ' in addr_str:
-                addr_str = addr_str.split(' ')[0]
-            address = int(addr_str, 16)
-
-            for line in raw_lines:
-                if 'ret' in line:
-                    loop = False
-                    code += line + '\n'
-                    break
-                # The last line will be processed in the next iteration
-                if not line != raw_lines[-1]:
-                    code += line + '\n'
+        for ins_block in self.read_instructions(address):
+            for ins in ins_block:
+                code += ins + '\n'
+                if 'ret' in ins:
+                    return code
         return code
+
+        #
+        # while loop:
+        #     cmd = "x/%di 0x%x" % (inst_count, address)
+        #     raw_code = self.execute_redirect(cmd)
+        #     if not raw_code:
+        #         break
+        #
+        #     raw_lines = raw_code.splitlines()
+        #
+        #     # Extract next addr from the last line
+        #     addr_str = raw_lines[-1].strip().split(':')[0]
+        #     if ' ' in addr_str:
+        #         addr_str = addr_str.split(' ')[0]
+        #     address = int(addr_str, 16)
+        #
+        #     for line in raw_lines:
+        #         if 'ret' in line:
+        #             loop = False
+        #             code += line + '\n'
+        #             break
+        #         # The last line will be processed in the next iteration
+        #         if not line != raw_lines[-1]:
+        #             code += line + '\n'
+        # return code
 
     @memoized
     def get_disasm(self, address, count=1):
@@ -3634,10 +3672,19 @@ class PEDACmd(object):
         :param args:
         :return:
         """
-        if args[0] == 'list':
+        if len(args) > 0 and args[0] == 'list':
             msg("list identified functions")
         else:
             msg("analyse mem mappings looking for functions")
+            for memmap in peda.get_vmmap():
+                start_addr = memmap[0]
+                end_addr = memmap[1]
+                block_size = end_addr - start_addr
+                msg(memmap)
+                cmd = "x/%di 0x%x" % (block_size, start_addr)
+                raw_code = peda.execute_redirect(cmd)
+
+
 
 
     # disassemble()
