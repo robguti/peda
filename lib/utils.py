@@ -28,6 +28,7 @@ from six import StringIO
 from six.moves import range
 from six.moves import input
 
+
 # http://wiki.python.org/moin/PythonDecoratorLibrary#Memoize
 # http://stackoverflow.com/questions/8856164/class-decorator-decorating-method-in-python
 class memoized(object):
@@ -342,6 +343,15 @@ def to_address(num):
         return "0x%016x" % num
     else:
         return "0x%08x" % num
+
+
+def to_short_address(addr):
+    if isinstance(addr, int):
+        return hex(addr)
+    elif isinstance(addr, str):
+        num = int(addr, 16)
+        return hex(num)
+
 
 def to_int(val):
     """
@@ -873,3 +883,4 @@ def string_repr(text, show_quotes=True):
         return output
     else:
         return output[1:-1]
+

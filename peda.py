@@ -20,6 +20,7 @@ import signal
 import traceback
 import codecs
 
+
 # point to absolute path of peda.py
 PEDAFILE = os.path.abspath(os.path.expanduser(__file__))
 if os.path.islink(PEDAFILE):
@@ -53,17 +54,73 @@ REGISTERS = {
 }
 
 ###########################################################################
+
+
+class OneToOneDict(dict):
+
+    def __init__(self, *args, **kwargs):
+        super(OneToOneDict, self).__init__(*args, **kwargs)
+        self._rev = {}
+
+    def __setitem__(self, key, value):
+        # Delete possible combination of key and value
+        for k, v in dict.items(self):
+            if k == key:
+                del self._rev[v]
+            if v == key:
+                del self._rev[k]
+
+        for k, v in self._rev.items():
+            if k == key:
+                dict.__delitem__(self, v)
+            if v == key:
+                dict.__delitem__(self, k)
+
+        dict.__setitem__(self, key, value)
+        self._rev[value] = key
+
+    def __getitem__(self, item):
+        try:
+            val = dict.__getitem__(self, item)
+        except KeyError as e:
+            val = self._rev[item]
+        return val
+
+    def __contains__(self, item):
+        res1 = dict.__contains__(self, item)
+        res2 = self._rev.__contains__(item)
+        return res1 or res2
+
+    def __delitem__(self, key):
+        val = dict.__getitem__(self, key)
+        dict.__delitem__(self, key)
+        del self._rev[val]
+
+    def __repr__(self):
+        string = "%s {\n" % self.__class__.__name__
+        for k in self.keys():
+            string += " %s -> %s\n" % (str(k), str(self[k]))
+        string += "----\n"
+        for k in self._rev.keys():
+            string += " %s -> %s\n" % (str(k), str(self[k]))
+        string += "}\n"
+        return string
+
+###########################################################################
+
+
 class PEDA(object):
     """
     Class for actual functions of PEDA commands
     """
     def __init__(self):
         self.SAVED_COMMANDS = {} # saved GDB user's commands
-
+        self.mem_flags = OneToOneDict()  # Storage for memory flags
 
     ####################################
     #   GDB Interaction / Misc Utils   #
     ####################################
+
     def execute(self, gdb_command):
         """
         Wrapper for gdb.execute, catch the exception so it will not stop python script
@@ -626,6 +683,29 @@ class PEDA(object):
                 result += [r]
         return result
 
+    def save_flags(self, filename):
+        """
+        Save current falgs to file as a script
+        Args:
+            - filename: target file (String)
+
+        Returns:
+            - True if success to save (Bool)
+        """
+        try:
+            file = open(filename, 'a')
+            for flag in self.mem_flags:
+                if not flag.startswith('0x'):
+                    addr = self.mem_flags[flag]
+                    flag_cmd = "flag %s %s\n" % (flag, addr)
+                    file.write(flag_cmd)
+            file.close()
+            return True
+        except IOError as e:
+            warning_msg("ERROR saving flags. " + str(e))
+            return False
+
+
     def save_breakpoints(self, filename):
         """
         Save current breakpoints to file as a script
@@ -715,6 +795,9 @@ class PEDA(object):
         try:
             # save breakpoints
             self.save_breakpoints(filename)
+            # save memory flags
+            self.save_flags(filename)
+            
             fd = open(filename, "a+")
             fd.write("\n" + session)
             fd.close()
@@ -3054,7 +3137,7 @@ class PEDACmd(object):
     def __init__(self):
         # list of all available commands
         self.commands = [c for c in dir(self) if callable(getattr(self, c)) and not c.startswith("_")]
-        self._flags = {}
+
     ##################
     #   Misc Utils   #
     ##################
@@ -3411,19 +3494,27 @@ class PEDACmd(object):
 
         return
 
-    def _replace_flags(self, cmd, args):
-        if cmd == 'flag':
-            return args
-        flag_keys = [x for x in self._flags if not x.startswith('0x')]
-        new_args = []
-        for arg in args:
+    def _replace_flag_to_addr(self, items):
+        flag_keys = [x for x in peda.mem_flags if not x.startswith('0x')]
+        for i, item in enumerate(items):
             for flag in flag_keys:
-                if flag == arg:
-                    index = args.index(arg)
-                    arg = self._flags[flag]
-                    msg("debug: found flag replacing")
-            new_args.append(arg)
-        return new_args
+                if flag == item:
+                    addr = peda.mem_flags[flag]
+                    items[i] = addr
+        return items
+
+    def _replace_addr_to_flag(self, items):
+        flag_keys = [x for x in peda.mem_flags.keys() if x.startswith('0x')]
+        msg(peda.mem_flags.keys())
+        for i, item in enumerate(items):
+            for flag in flag_keys:
+                flag_str = peda.mem_flags[flag]
+                patt = "%s" % to_short_address(flag)
+                msg("patt:"+ patt)
+                item = re.sub(patt, "<<%s>>" % (flag_str), item)
+                items[i] = item
+        return items
+
 
     def flag(self, *args):
         """
@@ -3433,34 +3524,43 @@ class PEDACmd(object):
             flags main -    -> delete flag
             flags main      -> show flag reference
         """
+
         if len(args) == 0:
-            for flag in self._flags:
-                addr = self._flags[flag]
+            # List all availabe flags
+            for flag in peda.mem_flags:
+                addr = peda.mem_flags[flag]
                 if not flag.startswith('0x'):
                     msg("flag %s %s" % (flag, addr))
+
         elif len(args) == 1:
+            # List selected flag
             flag = args[0]
-            if flag in self._flags:
-                addr = self._flags[flag]
+            if flag in peda.mem_flags:
+                addr = peda.mem_flags[flag]
                 msg("flag %s %s" % (flag, addr))
             else:
                 msg("Flag [%s] not found" % flag)
 
         elif len(args) >= 2:
             flag = args[0]
-            addr = args[1]
+            addr = to_address(to_int(args[1]))
+            msg(flag)
+            msg(addr)
+
             if addr == "-":
-                if flag in self._flags:
-                    addr = self._flags[flag]
-                    del self._flags[flag]
-                    del self._flags[addr]
+                # Delete a flag
+                if flag in peda.mem_flags:
+                    del peda.mem_flags[flag]
                     msg("Deleted flag [%s]" % flag)
                 else:
                     msg("Flag [%s] not found" % flag)
             else:
-                self._flags[addr] = flag
-                self._flags[flag] = addr
-                msg("Added flag [%s]" % flag)
+                # Add/replace flag
+                peda.mem_flags[flag] = addr
+                msg("Added flag [%s->%s]" % (flag, addr))
+
+
+        msg(repr(peda.mem_flags))
 
     def aslr(self, *arg):
         """
@@ -3673,12 +3773,14 @@ class PEDACmd(object):
     # disassemble()
     def fdisass(self, *args):
         """
-        Disas until ret
+        Disas until ret instruction
         :param args:
         :return:
         """
         (address, fmt_count) = normalize_argv(args, 2)
         code = peda.get_disasm_until_ret(address)
+        # Replace memory addresses by flags in the code
+        code = "\n".join(self._replace_addr_to_flag(code.splitlines()))
         msg(format_disasm_code(code))
 
     def pdisass(self, *arg):
@@ -3699,16 +3801,10 @@ class PEDACmd(object):
             code = peda.get_disasm_until_ret(address)
         else:
             code = peda.disassemble(*arg)
-
-        for flag_addr in self._flags:
-            if '0x' in flag_addr:
-                flag_str = self._flags[flag_addr]
-                patt = "%s" % flag_addr
-                msg(patt)
-                code = re.sub(patt, "<<%s>>" % (flag_str), code)
-
+        # Replace memory addresses by flags in the code
+        code = "\n".join(self._replace_addr_to_flag(code.splitlines()))
+        # Format code
         msg(format_disasm_code(code))
-
         return
 
     # disassemble_around
@@ -6070,7 +6166,11 @@ class pedaGDBCommand(gdb.Command):
                 try:
                     # reset memoized cache
                     reset_cache(sys.modules['__main__'])
-                    args = pedacmd._replace_flags(cmd, arg[1:])
+                    # Replace memory flags in the commands
+                    if cmd != 'flag':
+                        args = pedacmd._replace_flag_to_addr(arg[1:])
+                    else:
+                        args = arg[1:]
                     func(*args)
                 except Exception as e:
                     if config.Option.get("debug") == "on":
@@ -6211,3 +6311,5 @@ peda.execute("set step-mode on")
 peda.execute("set print pretty on")
 peda.execute("handle SIGALRM print nopass") # ignore SIGALRM
 peda.execute("handle SIGSEGV stop print nopass") # catch SIGSEGV
+
+
