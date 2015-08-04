@@ -1617,18 +1617,25 @@ class PEDA(object):
     @memoized
     def read_instructions(self, address, count=None, max=None):
         max = max or 512  # max number of instructions to get
-        icount = count or 2
+        icount = max
         loop = True
         last_line = ''
 
         while loop and icount > 0:
-            cmd = "x/%di 0x%x" % (2, address) # read 2 instructions per iteration
+            cmd = "x/%di 0x%x" % (2, address)  # read 2 instructions per iteration
             # msg(cmd)
             raw_code = self.execute_redirect(cmd)
             if not raw_code:
-                # If there was an error, return the previous last line as list and exit
-                if last_line:
-                    yield [last_line]
+                # If there was an error, try to read only 1 instruction
+                cmd = "x/%di 0x%x" % (1, address)
+                raw_code = self.execute_redirect(cmd)
+                if not raw_code:
+                    # if still there's an error, return the previous last line as list and exit
+                    if last_line:
+                        yield [last_line]
+                else:
+                    yield raw_code.splitlines()
+                # Finish
                 break
 
             raw_lines = raw_code.splitlines()
@@ -1640,7 +1647,7 @@ class PEDA(object):
                 addr_str = addr_str.split(' ')[0]
             address = int(addr_str, 16)
 
-            icount += len(raw_lines[-1])
+            icount -= len(raw_lines[:-1])
             yield raw_lines[:-1]
 
     @memoized
@@ -1661,30 +1668,6 @@ class PEDA(object):
                     return code
         return code
 
-        #
-        # while loop:
-        #     cmd = "x/%di 0x%x" % (inst_count, address)
-        #     raw_code = self.execute_redirect(cmd)
-        #     if not raw_code:
-        #         break
-        #
-        #     raw_lines = raw_code.splitlines()
-        #
-        #     # Extract next addr from the last line
-        #     addr_str = raw_lines[-1].strip().split(':')[0]
-        #     if ' ' in addr_str:
-        #         addr_str = addr_str.split(' ')[0]
-        #     address = int(addr_str, 16)
-        #
-        #     for line in raw_lines:
-        #         if 'ret' in line:
-        #             loop = False
-        #             code += line + '\n'
-        #             break
-        #         # The last line will be processed in the next iteration
-        #         if not line != raw_lines[-1]:
-        #             code += line + '\n'
-        # return code
 
     @memoized
     def get_disasm(self, address, count=1):
