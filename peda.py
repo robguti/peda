@@ -1627,7 +1627,6 @@ class PEDA(object):
         while loop:
             cmd = "x/%di 0x%x" % (inst_count, address)
             raw_code = self.execute_redirect(cmd)
-
             if not raw_code:
                 break
 
@@ -1639,12 +1638,14 @@ class PEDA(object):
                 addr_str = addr_str.split(' ')[0]
             address = int(addr_str, 16)
 
-            for line in raw_lines[:-1]:
-                code += line + '\n'
+            for line in raw_lines:
                 if 'ret' in line:
                     loop = False
+                    code += line + '\n'
                     break
-
+                # The last line will be processed in the next iteration
+                if not line != raw_lines[-1]:
+                    code += line + '\n'
         return code
 
     @memoized
@@ -3627,7 +3628,29 @@ class PEDACmd(object):
         msg(pid)
         return
 
+    def anaf(self, *args):
+        """
+        Analyse code to identify functions
+        :param args:
+        :return:
+        """
+        if args[0] == 'list':
+            msg("list identified functions")
+        else:
+            msg("analyse mem mappings looking for functions")
+
+
     # disassemble()
+    def fdisass(self, *args):
+        """
+        Disas until ret
+        :param args:
+        :return:
+        """
+        (address, fmt_count) = normalize_argv(args, 2)
+        code = peda.get_disasm_until_ret(address)
+        msg(format_disasm_code(code))
+
     def pdisass(self, *arg):
         """
         Format output of gdb disassemble command with colors
