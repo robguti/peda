@@ -63,18 +63,19 @@ class OneToOneDict(dict):
         self._rev = {}
 
     def __setitem__(self, key, value):
-        # Delete possible combination of key and value
-        for k, v in dict.items(self):
+        # Delete every possible combination of key and value
+        for k, v in list(dict.items(self)):
             if k == key:
+                dict.__delitem__(self, k)
                 del self._rev[v]
-            if v == key:
-                del self._rev[k]
+            elif v == value:
+                dict.__delitem__(self, k)
+                del self._rev[v]
 
-        for k, v in self._rev.items():
-            if k == key:
-                dict.__delitem__(self, v)
             if v == key:
                 dict.__delitem__(self, k)
+                del self._rev[v]
+
 
         dict.__setitem__(self, key, value)
         self._rev[value] = key
@@ -1698,13 +1699,14 @@ class PEDA(object):
 
 
     @memoized
-    def read_instructions(self, address, count=None, max=None):
+    def read_instructions(self, address, count=None, max=None, top_addr=None):
         max = max or 512  # max number of instructions to get
-        icount = max
+        icount = 0
+        top_addr = top_addr or 0xffffffffffffffff
         loop = True
         last_line = ''
 
-        while loop and icount > 0:
+        while loop and icount < max and address < top_addr:
             cmd = "x/%di 0x%x" % (2, address)  # read 2 instructions per iteration
             # msg(cmd)
             raw_code = self.execute_redirect(cmd)
@@ -1730,7 +1732,7 @@ class PEDA(object):
                 addr_str = addr_str.split(' ')[0]
             address = int(addr_str, 16)
 
-            icount -= len(raw_lines[:-1])
+            icount += len(raw_lines[:-1])
             yield raw_lines[:-1]
 
     @memoized
@@ -1788,7 +1790,6 @@ class PEDA(object):
             logfd.flush()
             mem = logfd.read()
             logfd.close()
-
         return mem
 
     def readmem(self, address, size):
@@ -3544,9 +3545,6 @@ class PEDACmd(object):
         elif len(args) >= 2:
             flag = args[0]
             addr = to_address(to_int(args[1]))
-            msg(flag)
-            msg(addr)
-
             if addr == "-":
                 # Delete a flag
                 if flag in peda.mem_flags:
@@ -3558,9 +3556,8 @@ class PEDACmd(object):
                 # Add/replace flag
                 peda.mem_flags[flag] = addr
                 msg("Added flag [%s->%s]" % (flag, addr))
-
-
-        msg(repr(peda.mem_flags))
+        #msg(repr(peda.mem_flags))
+        return
 
     def aslr(self, *arg):
         """
@@ -3749,7 +3746,7 @@ class PEDACmd(object):
         msg(pid)
         return
 
-    def anaf(self, *args):
+    def fana(self, *args):
         """
         Analyse code to identify functions
         :param args:
@@ -3762,13 +3759,15 @@ class PEDACmd(object):
             for memmap in peda.get_vmmap():
                 start_addr = memmap[0]
                 end_addr = memmap[1]
-                block_size = end_addr - start_addr
-                msg(memmap)
-                cmd = "x/%di 0x%x" % (block_size, start_addr)
-                raw_code = peda.execute_redirect(cmd)
+                msg(hex(start_addr))
+                msg(hex(end_addr))
+                msg('--------')
 
+                for code in peda.read_instructions(start_addr, top_addr=end_addr):
+                    msg(code)
 
-
+                #cmd = "x/%di 0x%x" % (block_size, start_addr)
+                #raw_code = peda.execute_redirect(cmd)
 
     # disassemble()
     def fdisass(self, *args):
