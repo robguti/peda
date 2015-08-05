@@ -76,7 +76,6 @@ class OneToOneDict(dict):
                 dict.__delitem__(self, k)
                 del self._rev[v]
 
-
         dict.__setitem__(self, key, value)
         self._rev[value] = key
 
@@ -106,6 +105,21 @@ class OneToOneDict(dict):
             string += " %s -> %s\n" % (str(k), str(self[k]))
         string += "}\n"
         return string
+
+    def keys(self):
+        for k in dict.keys(self):
+            yield k
+
+        for k in self._rev.keys():
+            yield k
+
+    def values(self):
+        for v in dict.values(self):
+            yield v
+
+        for v in self._rev.values():
+            yield v
+
 
 ###########################################################################
 
@@ -1746,7 +1760,7 @@ class PEDA(object):
             error_msg("Address [%s] not valid" % address)
             return None
 
-        for ins_block in self.read_instructions(address):
+        for ins_block in self.read_instructions(address, max=128):
             for ins in ins_block:
                 code += ins + '\n'
                 if 'ret' in ins:
@@ -3505,13 +3519,12 @@ class PEDACmd(object):
         return items
 
     def _replace_addr_to_flag(self, items):
+        #msg(items)
         flag_keys = [x for x in peda.mem_flags.keys() if x.startswith('0x')]
-        msg(peda.mem_flags.keys())
         for i, item in enumerate(items):
             for flag in flag_keys:
                 flag_str = peda.mem_flags[flag]
                 patt = "%s" % to_short_address(flag)
-                msg("patt:"+ patt)
                 item = re.sub(patt, "<<%s>>" % (flag_str), item)
                 items[i] = item
         return items
