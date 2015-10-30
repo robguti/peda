@@ -3775,10 +3775,12 @@ class PEDACmd(object):
                 msg(hex(start_addr))
                 msg(hex(end_addr))
                 msg('--------')
-
-                for code in peda.read_instructions(start_addr, top_addr=end_addr):
-                    msg(code)
-
+                count = 0
+                for code in peda.read_instructions(start_addr, top_addr=end_addr, max=10000):
+                    if 'call' in code:
+                        msg(code)
+                    count += 1
+                msg(count)
                 #cmd = "x/%di 0x%x" % (block_size, start_addr)
                 #raw_code = peda.execute_redirect(cmd)
 
